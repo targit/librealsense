@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/select.h>
 
 #pragma GCC diagnostic ignored "-Woverflow"
 

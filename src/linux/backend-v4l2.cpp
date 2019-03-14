@@ -35,6 +35,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/sysmacros.h> // minor(...), major(...)
+#include <sys/select.h>
 #include <linux/usb/video.h>
 #include <linux/uvcvideo.h>
 #include <linux/videodev2.h>
