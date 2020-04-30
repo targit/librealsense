@@ -19,8 +19,9 @@ class DeviceWatcher extends LrsClass {
     private final List<DeviceListener> mAppDeviceListener;
 
     public synchronized void addListener(DeviceListener deviceListener){
-        if(!mAppDeviceListener.contains(deviceListener))
+        if(!mAppDeviceListener.contains(deviceListener)) {
             mAppDeviceListener.add(deviceListener);
+        }
     }
 
     public synchronized void removeListener(DeviceListener deviceListener){
@@ -79,11 +80,7 @@ class DeviceWatcher extends LrsClass {
         }
     }
 
-    private void removeDevice(UsbDesc desc) {
-        Log.d(TAG, "Removing device: " + desc.name);
-
-        nRemoveUsbDevice(desc.descriptor);
-        desc.connection.close();
+    private void updateListeners(){
         for(DeviceListener listener : mAppDeviceListener) {
             try {
                 listener.onDeviceDetach();
@@ -91,27 +88,31 @@ class DeviceWatcher extends LrsClass {
                 Log.e(TAG, e.getMessage());
             }
         }
+    }
+
+    private void removeDevice(UsbDesc desc) {
+        Log.d(TAG, "Removing device: " + desc.name);
+
+        nRemoveUsbDevice(desc.descriptor);
+        desc.connection.close();
+        updateListeners();
         Log.d(TAG, "Device: " + desc.name + " removed successfully");
     }
 
-    private  void addDevice(UsbDevice device) {
+    private void addDevice(UsbDevice device) {
         if (device == null)
             return;
 
         UsbManager usbManager = (UsbManager) mContext.getSystemService(Context.USB_SERVICE);
         UsbDeviceConnection conn = usbManager.openDevice(device);
+        if(conn == null)
+            return;
         UsbDesc desc = new UsbDesc(device.getDeviceName(), conn.getFileDescriptor(), conn);
         Log.d(TAG, "Adding device: " + desc.name);
         mDescriptors.put(device.getDeviceName(), desc);
         nAddUsbDevice(desc.name, desc.descriptor);
 
-        for (DeviceListener listener : mAppDeviceListener){
-            try {
-                listener.onDeviceAttach();
-            } catch (Exception e){
-                Log.e(TAG, e.getMessage());
-            }
-        }
+        updateListeners();
         Log.d(TAG, "Device: " + desc.name + " added successfully");
     }
 

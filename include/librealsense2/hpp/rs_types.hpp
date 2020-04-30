@@ -43,9 +43,18 @@ struct rs2_notifications_callback
     virtual                                 ~rs2_notifications_callback() {}
 };
 
+typedef void ( *log_callback_function_ptr )(rs2_log_severity severity, rs2_log_message const * msg );
+
+struct rs2_software_device_destruction_callback
+{
+    virtual void                            on_destruction() = 0;
+    virtual void                            release() = 0;
+    virtual                                 ~rs2_software_device_destruction_callback() {}
+};
+
 struct rs2_log_callback
 {
-    virtual void                            on_event(rs2_log_severity severity, const char * message) = 0;
+    virtual void                            on_log( rs2_log_severity severity, rs2_log_message const & msg ) noexcept = 0;
     virtual void                            release() = 0;
     virtual                                 ~rs2_log_callback() {}
 };
@@ -62,6 +71,13 @@ struct rs2_playback_status_changed_callback
     virtual void                            on_playback_status_changed(rs2_playback_status status) = 0;
     virtual void                            release() = 0;
     virtual                                 ~rs2_playback_status_changed_callback() {}
+};
+
+struct rs2_update_progress_callback
+{
+    virtual void                            on_update_progress(const float update_progress) = 0;
+    virtual void                            release() = 0;
+    virtual                                 ~rs2_update_progress_callback() {}
 };
 
 namespace rs2

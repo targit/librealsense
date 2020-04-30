@@ -1,113 +1,135 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
+// License: Apache 2.0. See LICENSE file in root directory.
+// Copyright(c) 2017 Intel Corporation. All Rights Reserved.
 
 namespace Intel.RealSense
 {
-    public class Device : IDisposable
-    {
-        public IntPtr m_instance;
+    using System;
+    using System.Collections;
+    using System.Collections.Generic;
+    using System.Collections.ObjectModel;
+    using System.Runtime.InteropServices;
 
-        internal Device(IntPtr dev)
+    /// <summary>
+    /// The device object represents a physical camera and provides the means to manipulate it.
+    /// </summary>
+    public class Device : Base.RefCountedPooledObject
+    {
+        protected static Hashtable refCountTable = new Hashtable();
+        protected static readonly object tableLock = new object();
+        
+        internal override void Initialize()
         {
-            //if (dev == IntPtr.Zero)
-            //    throw new ArgumentNullException();
-            m_instance = dev;
+            lock (tableLock)
+            {
+                if (refCountTable.Contains(Handle))
+                    refCount = refCountTable[Handle] as Base.RefCount;
+                else
+                {
+                    refCount = new Base.RefCount();
+                    refCountTable[Handle] = refCount;
+                }
+                Retain();
+            }
+            Info = new InfoCollection(NativeMethods.rs2_supports_device_info, NativeMethods.rs2_get_device_info, Handle);
         }
 
-        public class CameraInfos
+        protected override void Dispose(bool disposing)
         {
-            readonly IntPtr m_device;
-            public CameraInfos(IntPtr device) { m_device = device; }
-
-            public string this[CameraInfo info]
+            if (m_instance.IsInvalid)
             {
-                get
-                {
-                    object err;
-                    if (NativeMethods.rs2_supports_device_info(m_device, info, out err) > 0)
-                        return Marshal.PtrToStringAnsi(NativeMethods.rs2_get_device_info(m_device, info, out err));
-                    return null;
+                return;
+            }
+
+            lock (tableLock)
+            {
+                IntPtr localHandle = Handle;
+                System.Diagnostics.Debug.Assert(refCountTable.Contains(localHandle));
+
+                base.Dispose(disposing);
+
+                if (refCount.count == 0)
+                { 
+                    refCountTable.Remove(localHandle);
                 }
             }
         }
 
-        CameraInfos m_info;
-
-        public CameraInfos Info
+        internal Device(IntPtr ptr)
+            : base(ptr, null)
         {
-            get
-            {
-                if (m_info == null)
-                    m_info = new CameraInfos(m_instance);
-                return m_info;
-            }
+            this.Initialize();
         }
+
+        internal Device(IntPtr ptr, Base.Deleter deleter)
+            : base(ptr, deleter)
+        {
+            this.Initialize();
+        }
+
+        internal static T Create<T>(IntPtr ptr)
+            where T : Device
+        {
+            return ObjectPool.Get<T>(ptr);
+        }
+
+        internal static T Create<T>(IntPtr ptr, Base.Deleter deleter)
+            where T : Device
+        {
+            var dev = ObjectPool.Get<T>(ptr);
+            dev.Reset(ptr, deleter);
+            return dev;
+        }
+
+        /// <summary>
+        /// Gets camera specific information, like versions of various internal components
+        /// </summary>
+        public InfoCollection Info { get; private set; }
 
         /// <summary>
         /// create a static snapshot of all connected devices at the time of the call
         /// </summary>
-        /// <returns></returns>
-        public SensorList QuerySensors()
+        /// <returns>The list of sensors</returns>
+        public ReadOnlyCollection<Sensor> QuerySensors()
         {
             object error;
-            var ptr = NativeMethods.rs2_query_sensors(m_instance, out error);
-            return new SensorList(ptr);
+            var ptr = NativeMethods.rs2_query_sensors(Handle, out error);
+            using (var sl = new SensorList(ptr))
+            {
+                var a = new Sensor[sl.Count];
+                sl.CopyTo(a, 0);
+                return Array.AsReadOnly(a);
+            }
         }
 
         /// <summary>
-        /// create a static snapshot of all connected devices at the time of the call
+        /// Gets a static snapshot of all connected devices at the time of the call
         /// </summary>
-        public SensorList Sensors
-        {
-            get
-            {
-                return QuerySensors();
-            }
-        }
-        
+        /// <value>The list of sensors</value>
+        public ReadOnlyCollection<Sensor> Sensors => QuerySensors();
+
+        /// <summary>
+        /// Send hardware reset request to the device. The actual reset is asynchronous.
+        /// Note: Invalidates all handles to this device.
+        /// </summary>
         public void HardwareReset()
         {
                 object error;
-                NativeMethods.rs2_hardware_reset(m_instance, out error);
+                NativeMethods.rs2_hardware_reset(Handle, out error);
         }
 
-        #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
-
-        protected virtual void Dispose(bool disposing)
+        /// <summary>Test if the given device can be extended to the requested extension.</summary>
+        /// <param name="extension">The extension to which the device should be tested if it is extendable</param>
+        /// <returns>Non-zero value iff the device can be extended to the given extension</returns>
+        public bool Is(Extension extension)
         {
-            if (!disposedValue)
-            {
-                if (disposing)
-                {
-                    // TODO: dispose managed state (managed objects).
-                }
-
-                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
-                // TODO: set large fields to null.
-                NativeMethods.rs2_delete_device(m_instance);
-
-                disposedValue = true;
-            }
+            object error;
+            return NativeMethods.rs2_is_device_extendable_to(Handle, extension, out error) != 0;
         }
 
-        // TODO: override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources.
-        ~Device()
+        public T As<T>()
+            where T : Device
         {
-            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-            Dispose(false);
+            return Device.Create<T>(Handle);
         }
-
-        // This code added to correctly implement the disposable pattern.
-        public void Dispose()
-        {
-            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-            Dispose(true);
-            // TODO: uncomment the following line if the finalizer is overridden above.
-            GC.SuppressFinalize(this);
-        }
-        #endregion
     }
 }

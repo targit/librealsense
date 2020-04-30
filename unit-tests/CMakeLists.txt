@@ -6,21 +6,21 @@ project(RealsenseUnitTests)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# Save the command line compile commands in the build output
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-# View the makefile commands during build
-#set(CMAKE_VERBOSE_MAKEFILE on)
-
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
-if(COMPILER_SUPPORTS_CXX11)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-elseif(COMPILER_SUPPORTS_CXX0X)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-endif()
-
 set(DEPENDENCIES realsense2)
+
+find_package (Python3 COMPONENTS Interpreter Development)
+if(Python3_FOUND)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/unit-test-config.py ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}
+        RESULT_VARIABLE rv
+    )
+    if( NOT ${rv} EQUAL 0 )
+        message(FATAL_ERROR "unit-test-config has failed with status = ${rv}")
+    endif()
+    add_subdirectory( ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/build )
+else()
+    message(WARNING "Python 3 was not found; Unit tests will be limited!")
+endif()
 
 set (unit_tests_sources
     unit-tests-live.cpp
@@ -32,6 +32,7 @@ set (unit_tests_sources
 )
 
 add_executable(live-test ${unit_tests_sources})
+set_property(TARGET live-test PROPERTY CXX_STANDARD 11)
 target_link_libraries(live-test ${DEPENDENCIES} Threads::Threads)
 
 set_target_properties (live-test PROPERTIES
@@ -62,6 +63,13 @@ add_custom_command(TARGET live-test POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_CURRENT_SOURCE_DIR}/resources
     ${Deployment_Location}
+)
+
+# copy wheel odometry calibration file to build folder
+add_custom_command(TARGET live-test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/calibration_odometry.json
+    ${CMAKE_CURRENT_BINARY_DIR}/calibration_odometry.json
 )
 
 #Post-Processing data set for unit-tests
@@ -129,10 +137,10 @@ endfunction()
 function(is_file_empty empty filename)
     set (data "")
     if(EXISTS ${filename})
-        file(READ ${filename} data [OFFSET 0] [LIMIT 1] [HEX])
+        file(STRINGS  ${filename} data)
     endif()
     string(LENGTH "${data}" data_length)
-    #message(STATUS "Read ${data_length}  bytes from  ${Deployment_Location}${i}")
+    #message(STATUS "Read ${data_length}  bytes from  ${filename}")
     set(res TRUE)
     if (NOT ${data_length} STREQUAL "0")
         set(res FALSE)
@@ -160,9 +168,9 @@ foreach(i ${PP_Tests_List})
       set(Test_File_Name "${Test_Pattern}${idx}${ext}")
       set(source ${PP_TESTS_URL}${Test_File_Name})
       set(destination ${Deployment_Location}${Test_File_Name})
-      #message(STATUS "Checking for a required test record ${Test_File_Name}")
       set (empty FALSE)
       is_file_empty(empty, ${destination} )
+      #message(STATUS "Checked " ${empty} " for " ${Test_File_Name} " in " ${destination})
       if(NOT EXISTS "${destination}" OR ${empty})
           message(STATUS "Downloading ${source}")
           file(DOWNLOAD "${source}" "${destination}" LOG log STATUS status TIMEOUT 300) # SHOW_PROGRESS LOG log STATUS status
@@ -177,12 +185,13 @@ foreach(i ${PP_Tests_List})
   endforeach(ext)
 endforeach(i)
 
-list(APPEND PP_Rosbag_Recordings_List  
+list(APPEND PP_Rosbag_Recordings_List
     [aligned_2c]_all_combinations_depth_color.bag
     [aligned_2d]_all_combinations_depth_color.bag
     all_combinations_depth_color.bag
     [pointcloud]_all_combinations_depth_color.bag
     single_depth_color_640x480.bag
+    D435i_Depth_and_IMU.bag
 )
  set(PP_Rosbag_Recordings_URL http://realsense-hw-public.s3.amazonaws.com/rs-tests/Rosbag_unit_test_records/)
 foreach(i ${PP_Rosbag_Recordings_List})
@@ -194,3 +203,7 @@ foreach(i ${PP_Rosbag_Recordings_List})
         file(DOWNLOAD "${PP_Rosbag_Recordings_URL}${i}" "${Deployment_Location}${i}" TIMEOUT 600 STATUS status LOG log)
     endif()
 endforeach(i)
+
+if(NOT ${BUILD_SHARED_LIBS} AND ${BUILD_INTERNAL_UNIT_TESTS})
+    add_subdirectory(internal)
+endif()

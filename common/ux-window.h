@@ -14,6 +14,7 @@
 namespace rs2
 {
     class visualizer_2d;
+    class context;
 
     class viewer_ui_traits
     {
@@ -34,7 +35,7 @@ namespace rs2
         std::function<void(std::string)> on_file_drop = [](std::string) {};
         std::function<bool()>            on_load = []() { return false; };
 
-        ux_window(const char* title);
+        ux_window(const char* title, context &ctx);
 
         float width() const { return float(_width); }
         float height() const { return float(_height); }
@@ -47,7 +48,7 @@ namespace rs2
 
         ~ux_window();
 
-        operator GLFWwindow*() { return _win; }
+        operator GLFWwindow*() const { return _win; }
 
         void begin_frame();
 
@@ -78,6 +79,9 @@ namespace rs2
         void open_window();
 
         void setup_icon();
+
+        void imgui_config_push();
+        void imgui_config_pop();
 
         GLFWwindow               *_win;
         int                      _width, _height, _output_height;
@@ -118,6 +122,7 @@ namespace rs2
 
         std::string              _title;
         std::shared_ptr<visualizer_2d> _2d_vis;
+        context                  &_ctx;
 
         bool                     _is_ui_aligned = false;
     };

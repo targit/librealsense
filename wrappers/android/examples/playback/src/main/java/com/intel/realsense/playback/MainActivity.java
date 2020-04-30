@@ -16,6 +16,7 @@ import com.intel.realsense.librealsense.Config;
 import com.intel.realsense.librealsense.FrameSet;
 import com.intel.realsense.librealsense.Pipeline;
 import com.intel.realsense.librealsense.GLRsSurfaceView;
+import com.intel.realsense.librealsense.PipelineProfile;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -34,6 +35,12 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 0);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mGLSurfaceView.close();
     }
 
     @Override
@@ -65,6 +72,7 @@ public class MainActivity extends AppCompatActivity {
         if(mStreaming.isAlive()) {
             try {
                 mStreaming.join(1000);
+                mGLSurfaceView.clear();
             } catch (InterruptedException e) {
                 Log.e(TAG, e.getMessage());
             }
@@ -88,24 +96,27 @@ public class MainActivity extends AppCompatActivity {
     Thread mStreaming = new Thread() {
         @Override
         public void run() {
-            Colorizer colorizer = new Colorizer();
-            Config config = new Config();
             String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + mUri.getPath().split(":")[1];
-            config.enableDeviceFromFile(filePath);
-            Pipeline pipeline = new Pipeline();
-            try {
-                pipeline.start(config);
-                while (!mStreaming.isInterrupted()) {
-                    try (FrameSet frames = pipeline.waitForFrames(1000)) {
-                        try (FrameSet processed = frames.applyFilter(colorizer)) {
-                            mGLSurfaceView.upload(processed);
+            try(Colorizer colorizer = new Colorizer()) {
+                try (Config config = new Config()) {
+                    config.enableDeviceFromFile(filePath);
+                    try (Pipeline pipeline = new Pipeline()) {
+                        try {
+                            // try statement needed here to release resources allocated by the Pipeline:start() method
+                            try (PipelineProfile pp = pipeline.start(config)) {}
+                            while (!mStreaming.isInterrupted()) {
+                                try (FrameSet frames = pipeline.waitForFrames(1000)) {
+                                    try (FrameSet processed = frames.applyFilter(colorizer)) {
+                                        mGLSurfaceView.upload(processed);
+                                    }
+                                }
+                            }
+                            pipeline.stop();
+                        } catch (Exception e) {
+                            Log.e(TAG, "streaming, error: " + e.getMessage());
                         }
                     }
                 }
-                pipeline.stop();
-            }
-            catch (Exception e) {
-                Log.e(TAG, "streaming, error: " + e.getMessage());
             }
         }
     };
